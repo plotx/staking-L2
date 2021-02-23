@@ -2,6 +2,7 @@ var ethutil= require('ethereumjs-util');
 var abi = require('ethereumjs-abi');
 const BN = require('bn.js');
 var eip = require('eip-712');
+const increaseTimeTo = require("./increaseTime.js").increaseTimeTo;
 
 
 async function signAndExecuteMetaTx(...args) {
@@ -47,11 +48,9 @@ async function signAndExecuteMetaTx(...args) {
 	      sign1[0]= signature.v ;
 		  sign1[1]= '0x' + (signature.r).toString('hex');
 		  sign1[2]= '0x' + (signature.s).toString('hex');
+		  
 		  if(args[5])
-		  {
-		  	await contractInstance.executeMetaTransaction(user, functionSignature, sign1[1], sign1[2], sign1[0],{from:args[4]});	
-		  }
-		else
+		await increaseTimeTo(args[5]);
 		  await contractInstance.executeMetaTransaction(user, functionSignature, sign1[1], sign1[2], sign1[0]);
 }
 

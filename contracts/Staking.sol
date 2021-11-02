@@ -65,10 +65,14 @@ contract Staking is NativeMetaTransaction {
     //Total time (in sec) over which reward will be distributed
     uint256 public stakingPeriod;
 
+    uint256 public lockedTill;
+
     /**
      * @dev Emitted when `staker` stake `value` tokens.
      */
     event Staked(address indexed staker, uint256 value, uint256 _globalYieldPerToken);
+
+    event BatchStaking(address caller, address[] indexed stakers, uint256[] values, uint totalStakeInBatch);
 
     /**
      * @dev Emitted when `staker` withdraws their stake `value` tokens.
@@ -98,7 +102,8 @@ contract Staking is NativeMetaTransaction {
         uint256 _stakingPeriod,
         uint256 _totalRewardToBeDistributed,
         uint256 _stakingStart,
-        address _vaultAdd
+        address _vaultAdd,
+        uint256 _lockedTill
     ) public {
         require(_stakingPeriod > 0, "Should be positive");
         require(_totalRewardToBeDistributed > 0, "Total reward can not be 0");
@@ -113,6 +118,7 @@ contract Staking is NativeMetaTransaction {
         stakingPeriod = _stakingPeriod;
         totalReward = _totalRewardToBeDistributed;
         vaultAddress = _vaultAdd;
+        lockedTill = _lockedTill;
         _initializeEIP712("Staking");
     }
 
@@ -123,17 +129,38 @@ contract Staking is NativeMetaTransaction {
      */
     function stake(uint256 _amount) external {
         address payable _msgSender = _msgSender();
-        require(_amount > 0, "You need to stake a positive token amount");
         require(
             stakeToken.transferFrom(_msgSender, address(this), _amount),
             "TransferFrom failed, make sure you approved token transfer"
         );
+        _stake(_msgSender, _amount);
+    }
+
+    function stakeFor(address[] calldata _users, uint256[] calldata _amounts, uint256 _totalStakeInBatch) external {
+        address payable _msgSender = _msgSender();
+        require(_users.length == _amounts.length,"Array length mismatch");
+        require(
+            stakeToken.transferFrom(_msgSender, address(this), _totalStakeInBatch),
+            "TransferFrom failed, make sure you approved token transfer"
+        );
+        uint totalStake = 0;
+        for(uint i=0;i<_users.length;i++){
+            totalStake = totalStake.add(_amounts[i]);
+            _stake(_users[i], _amounts[i]);
+        }
+        require(_totalStakeInBatch == totalStake,"Incorrect payment");
+        emit BatchStaking(_msgSender, _users, _amounts, _totalStakeInBatch);
+    }
+
+    function _stake(address _user, uint256 _amount) internal {
+
+        require(_amount > 0, "You need to stake a positive token amount");
         require(now.sub(stakingStartTime) <= stakingPeriod, "Can not stake after staking period passed");
         uint newlyInterestGenerated = now.sub(interestData.lastUpdated).mul(totalReward).div(stakingPeriod);
         interestData.lastUpdated = now;
         updateGlobalYieldPerToken(newlyInterestGenerated);
-        updateStakeData(_msgSender, _amount);
-        emit Staked(_msgSender, _amount, interestData.globalYieldPerToken);
+        updateStakeData(_user, _amount);
+        emit Staked(_user, _amount, interestData.globalYieldPerToken);
     }
 
     /**
@@ -186,6 +213,7 @@ contract Staking is NativeMetaTransaction {
      * @dev Withdraws the sender staked Token.
      */
     function withdrawStakeAndInterest(uint256 _amount) external {
+        require(now > lockedTill,"Still locked");
         address payable _msgSender = _msgSender();
         Staker storage staker = interestData.stakers[_msgSender];
         require(_amount > 0, "Should withdraw positive amount");
@@ -226,6 +254,7 @@ contract Staking is NativeMetaTransaction {
      * @dev Withdraws the sender Earned interest.
      */
     function withdrawInterest() public {
+        require(now > lockedTill,"Still locked");
         address payable _msgSender = _msgSender();
         uint timeSinceLastUpdate = _timeSinceLastUpdate();
         uint newlyInterestGenerated = timeSinceLastUpdate.mul(totalReward).div(stakingPeriod);

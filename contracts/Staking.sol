@@ -72,7 +72,7 @@ contract Staking is NativeMetaTransaction {
      */
     event Staked(address indexed staker, uint256 value, uint256 _globalYieldPerToken);
 
-    event BatchStaking(address caller, address[] indexed stakers, uint256[] values, uint totalStakeInBatch);
+    event BatchStaking(address caller, address[] indexed stakers, uint256[] values, uint totalStakeInBatch, uint256 indexed _date);
 
     /**
      * @dev Emitted when `staker` withdraws their stake `value` tokens.
@@ -136,7 +136,7 @@ contract Staking is NativeMetaTransaction {
         _stake(_msgSender, _amount);
     }
 
-    function stakeFor(address[] calldata _users, uint256[] calldata _amounts, uint256 _totalStakeInBatch) external {
+    function stakeFor(address[] calldata _users, uint256[] calldata _amounts, uint256 _totalStakeInBatch, uint256 _date) external {
         address payable _msgSender = _msgSender();
         require(_users.length == _amounts.length,"Array length mismatch");
         require(
@@ -149,11 +149,11 @@ contract Staking is NativeMetaTransaction {
             _stake(_users[i], _amounts[i]);
         }
         require(_totalStakeInBatch == totalStake,"Incorrect payment");
-        emit BatchStaking(_msgSender, _users, _amounts, _totalStakeInBatch);
+        emit BatchStaking(_msgSender, _users, _amounts, _totalStakeInBatch, _date);
     }
 
     function _stake(address _user, uint256 _amount) internal {
-
+        require(_user != address(0),"Can't be null address");
         require(_amount > 0, "You need to stake a positive token amount");
         require(now.sub(stakingStartTime) <= stakingPeriod, "Can not stake after staking period passed");
         uint newlyInterestGenerated = now.sub(interestData.lastUpdated).mul(totalReward).div(stakingPeriod);
@@ -213,7 +213,7 @@ contract Staking is NativeMetaTransaction {
      * @dev Withdraws the sender staked Token.
      */
     function withdrawStakeAndInterest(uint256 _amount) external {
-        require(now > lockedTill,"Still locked");
+        // require(now > lockedTill,"Still locked");
         address payable _msgSender = _msgSender();
         Staker storage staker = interestData.stakers[_msgSender];
         require(_amount > 0, "Should withdraw positive amount");
@@ -254,7 +254,7 @@ contract Staking is NativeMetaTransaction {
      * @dev Withdraws the sender Earned interest.
      */
     function withdrawInterest() public {
-        require(now > lockedTill,"Still locked");
+        // require(now > lockedTill,"Still locked");
         address payable _msgSender = _msgSender();
         uint timeSinceLastUpdate = _timeSinceLastUpdate();
         uint newlyInterestGenerated = timeSinceLastUpdate.mul(totalReward).div(stakingPeriod);

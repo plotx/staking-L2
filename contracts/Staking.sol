@@ -213,7 +213,7 @@ contract Staking is NativeMetaTransaction {
      * @dev Withdraws the sender staked Token.
      */
     function withdrawStakeAndInterest(uint256 _amount) external {
-        // require(now > lockedTill,"Still locked");
+        require(now > lockedTill,"Still locked");
         address payable _msgSender = _msgSender();
         Staker storage staker = interestData.stakers[_msgSender];
         require(_amount > 0, "Should withdraw positive amount");
@@ -254,7 +254,7 @@ contract Staking is NativeMetaTransaction {
      * @dev Withdraws the sender Earned interest.
      */
     function withdrawInterest() public {
-        // require(now > lockedTill,"Still locked");
+        require(now > lockedTill,"Still locked");
         address payable _msgSender = _msgSender();
         uint timeSinceLastUpdate = _timeSinceLastUpdate();
         uint newlyInterestGenerated = timeSinceLastUpdate.mul(totalReward).div(stakingPeriod);

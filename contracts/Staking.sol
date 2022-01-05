@@ -65,7 +65,16 @@ contract Staking is NativeMetaTransaction {
     //Total time (in sec) over which reward will be distributed
     uint256 public stakingPeriod;
 
-    uint256 public lockedTill;
+    uint256 public minStake; 
+
+    uint256 public fees;
+
+    uint8 public bplotRewardPerc;
+
+    address public bplot;
+
+    address public authorised;
+
 
     /**
      * @dev Emitted when `staker` stake `value` tokens.
@@ -78,6 +87,11 @@ contract Staking is NativeMetaTransaction {
      * @dev Emitted when `staker` withdraws their stake `value` tokens.
      */
     event StakeWithdrawn(address indexed staker, uint256 value, uint256 _globalYieldPerToken);
+
+    /*
+     * @dev Emitted when bplot is rewarded to staker
+    */
+    event BplotRewarded(address indexed staker, uint256 value, uint256 feesDeducted);
 
 
     /**
@@ -103,7 +117,11 @@ contract Staking is NativeMetaTransaction {
         uint256 _totalRewardToBeDistributed,
         uint256 _stakingStart,
         address _vaultAdd,
-        uint256 _lockedTill
+        address _bplot,
+        uint256 _minStake,
+        uint256 _fees,
+        uint8 _bplotRewardsPerc,
+        address _authorised
     ) public {
         require(_stakingPeriod > 0, "Should be positive");
         require(_totalRewardToBeDistributed > 0, "Total reward can not be 0");
@@ -118,7 +136,11 @@ contract Staking is NativeMetaTransaction {
         stakingPeriod = _stakingPeriod;
         totalReward = _totalRewardToBeDistributed;
         vaultAddress = _vaultAdd;
-        lockedTill = _lockedTill;
+        minStake = _minStake;
+        fees = _fees;
+        bplotRewardPerc = _bplotRewardsPerc;
+        bplot = _bplot;
+        authorised = _authorised;
         _initializeEIP712("Staking");
     }
 
@@ -154,12 +176,20 @@ contract Staking is NativeMetaTransaction {
 
     function _stake(address _user, uint256 _amount) internal {
         require(_user != address(0),"Can't be null address");
-        require(_amount > 0, "You need to stake a positive token amount");
+        require(_amount > minStake, "You need to stake minimum amount");
         require(now.sub(stakingStartTime) <= stakingPeriod, "Can not stake after staking period passed");
         uint newlyInterestGenerated = now.sub(interestData.lastUpdated).mul(totalReward).div(stakingPeriod);
         interestData.lastUpdated = now;
+        uint feeMultiplier = 1; // 2 if user's 1st stake else 1
+        if(interestData.stakers[_user].totalStaked == 0) {
+            feeMultiplier = 2;
+        }
         updateGlobalYieldPerToken(newlyInterestGenerated);
         updateStakeData(_user, _amount);
+        uint bplotReward = _amount.mul(bplotRewardPerc).div(100);
+        ERC20(bplot).transfer(_user,bplotReward.sub(fees.mul(feeMultiplier)));
+        
+        emit BplotRewarded(_user, bplotReward, fees);
         emit Staked(_user, _amount, interestData.globalYieldPerToken);
     }
 
@@ -213,7 +243,7 @@ contract Staking is NativeMetaTransaction {
      * @dev Withdraws the sender staked Token.
      */
     function withdrawStakeAndInterest(uint256 _amount) external {
-        require(now > lockedTill,"Still locked");
+        require(now.sub(stakingStartTime) > stakingPeriod, "Still locked");
         address payable _msgSender = _msgSender();
         Staker storage staker = interestData.stakers[_msgSender];
         require(_amount > 0, "Should withdraw positive amount");
@@ -254,7 +284,7 @@ contract Staking is NativeMetaTransaction {
      * @dev Withdraws the sender Earned interest.
      */
     function withdrawInterest() public {
-        require(now > lockedTill,"Still locked");
+        require(now.sub(stakingStartTime) > stakingPeriod, "Still locked");
         address payable _msgSender = _msgSender();
         uint timeSinceLastUpdate = _timeSinceLastUpdate();
         uint newlyInterestGenerated = timeSinceLastUpdate.mul(totalReward).div(stakingPeriod);
@@ -434,4 +464,27 @@ contract Staking is NativeMetaTransaction {
         return (interestData.globalTotalStaked, totalReward, estimatedReward, unlockedReward, accruedReward);
 
     }
+
+    function updateConfigParams(bytes8 _code, uint256 _val) public {
+        require(msg.sender == authorised,"Not authorised to update");
+        if(_code == "MS") {
+            minStake = _val;
+        } else if(_code == "FEES") {
+            fees = _val;
+        } else if(_code == "BRP") {
+            require(_val <= 100, "Should be less than 100");
+            require(uint8(_val) == _val, "Value is Overflowing");
+            bplotRewardPerc = uint8(_val);
+        } else {
+            revert("Invalid code");
+        }
+    }
+
+    function updateAuthAddress(address _newAuth) public {
+        require(msg.sender == authorised,"Not authorised to update");
+        // not adding null address check because null address is allowed to renounce auth address
+        authorised = _newAuth;
+    }
+
+
 }
